@@ -1,0 +1,83 @@
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+class NFTVista:
+    def __init__(self):
+        self.api_url = 'https://api.opensea.io/api/v1'
+
+    def get_nft_data(self, token_id: str, contract_address: str) -> dict:
+        """Fetches data for a specific NFT."""
+        url = f"{self.api_url}/asset/{contract_address}/{token_id}"
+        response = requests.get(url)
+        return response.json()
+
+    def get_nft_sales_data(self, token_id: str, contract_address: str, days: int) -> pd.DataFrame:
+        """Fetches historical sales data for a specific NFT."""
+        url = f"{self.api_url}/assets"
+        params = {
+            'order_by': 'price',
+            'order_direction': 'desc',
+            'asset_contract_address': contract_address,
+            'token_ids': token_id,
+            'limit': 100
+        }
+        response = requests.get(url, params=params)
+        data = response.json()
+        sales = data.get('assets', [])
+        sales_data = []
+        for sale in sales:
+            timestamp = sale.get('last_sale', {}).get('event_timestamp', '')
+            price = sale.get('last_sale', {}).get('total_price', 0)
+            sales_data.append([timestamp, float(price) / 1e18])  # Convert price from Wei to ETH
+        df = pd.DataFrame(sales_data, columns=['timestamp', 'price'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        return df
+
+    def analyze_nft_data(self, token_id: str, contract_address: str) -> dict:
+        """Analyzes metrics such as current price and last sale for a specific NFT."""
+        data = self.get_nft_data(token_id, contract_address)
+        if not data:
+            return {
+                'token_id': token_id,
+                'current_price': 0,
+                'last_sale_price': 0
+            }
+        current_price = data.get('sell_orders', [{}])[0].get('current_price', 0) / 1e18  # Convert from Wei to ETH
+        last_sale_price = data.get('last_sale', {}).get('total_price', 0) / 1e18  # Convert from Wei to ETH
+        return {
+            'token_id': token_id,
+            'current_price': current_price,
+            'last_sale_price': last_sale_price
+        }
+
+    def plot_nft_price_trends(self, token_id: str, contract_address: str, days: int):
+        """Plots historical price trends for a specific NFT."""
+        df = self.get_nft_sales_data(token_id, contract_address, days)
+        if df.empty:
+            print("No sales data found.")
+            return
+
+        plt.figure(figsize=(12, 6))
+        df['price'].plot()
+        plt.title(f'{token_id} Price Trend')
+        plt.xlabel('Date')
+        plt.ylabel('Price (ETH)')
+        plt.grid(True)
+        plt.show()
+
+# Example Usage
+if __name__ == "__main__":
+    nft_vista = NFTVista()
+
+    # Fetch and Display NFT Data
+    token_id = '1'  # Replace with the NFT token ID
+    contract_address = '0x...your_contract_address_here'  # Replace with the NFT contract address
+    nft_data = nft_vista.analyze_nft_data(token_id, contract_address)
+    print(f"Data for NFT token {token_id}:")
+    print(nft_data)
+
+    # Plot Historical Price Trends
+    nft_vista.plot_nft_price_trends(token_id=token_id, contract_address=contract_address, days=30)  # Last 30 days
